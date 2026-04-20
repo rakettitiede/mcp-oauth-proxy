@@ -1,0 +1,48 @@
+{
+  "name": "@rakettitiede/mcp-oauth-proxy",
+  "version": "0.1.0",
+  "description": "Express middleware and router bridging Custom GPT's OAuth expectations to Google as IdP, with API-key fallback. Extracted from Rakettitiede MCP servers.",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs'"
+  },
+  "keywords": [
+    "express",
+    "oauth",
+    "google",
+    "custom-gpt",
+    "middleware",
+    "mcp"
+  ],
+  "author": "Rakettitiede Oy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rakettitiede/mcp-oauth-proxy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rakettitiede/mcp-oauth-proxy/issues"
+  },
+  "homepage": "https://github.com/rakettitiede/mcp-oauth-proxy#readme",
+  "peerDependencies": {
+    "express": "^4.18.0 || ^5.0.0"
+  },
+  "devDependencies": {
+    "express": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
