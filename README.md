@@ -40,7 +40,7 @@ const requireAuth = createRequireAuth({
   googleClientId: process.env.GOOGLE_CLIENT_ID,
 });
 
-const oauthRouter = createOAuthRouter({
+const { oauthRouter, oauthMeta } = createOAuthRouter({
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
 });
@@ -48,7 +48,7 @@ const oauthRouter = createOAuthRouter({
 app.use('/oauth', oauthRouter);
 app.use('/api', requireAuth, yourProtectedRoutes);
 
-app.listen(8080);
+app.listen(8080, () => console.log(oauthMeta.startupLog));
 ```
 
 ## `createRequireAuth(config)`
@@ -86,7 +86,18 @@ The middleware evaluates these in order and uses the first that succeeds:
 
 ## `createOAuthRouter(config)`
 
-Returns an Express Router with three endpoints that together form an OAuth 2.0 authorization server, delegating the actual authentication to Google. Mount wherever you want the OAuth endpoints to live (conventionally `/oauth`).
+Returns `{ oauthRouter, oauthMeta }`:
+
+- **`oauthRouter`** — The Express Router. Mount with `app.use('/oauth', oauthRouter)`.
+- **`oauthMeta`** — A frozen metadata object describing what this router mounts:
+  - `oauthMeta.startupLog` — string suitable for printing in your `app.listen` callback (e.g. `"🔐 OAuth: GET /oauth/authorize, ..."`)
+  - `oauthMeta.endpoints` — `{ authorize, callback, token }` map of route paths
+
+Use `oauthMeta` to compose your server's startup logs without hardcoding OAuth route paths in consumer code.
+
+### Endpoints
+
+The router contains three endpoints that together form an OAuth 2.0 authorization server, delegating the actual authentication to Google. Mount wherever you want the OAuth endpoints to live (conventionally `/oauth`).
 
 ### Config
 
@@ -198,7 +209,7 @@ npm install
 npm test
 ```
 
-26 tests across three suites (auth middleware, OAuth router, in-memory token store), using `node:test` — no external runner.
+31 tests across four suites (auth middleware, OAuth router, oauthMeta, in-memory token store), using `node:test` — no external runner.
 
 ## License
 
