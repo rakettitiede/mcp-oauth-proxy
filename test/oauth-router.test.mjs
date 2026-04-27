@@ -18,7 +18,7 @@ const baseConfig = {
 
 async function startApp(routerConfig) {
   const app = express();
-  app.use('/oauth', createOAuthRouter(routerConfig));
+  app.use('/oauth', createOAuthRouter(routerConfig).oauthRouter);
   const server = createServer(app);
   await new Promise(r => server.listen(0, r));
   const port = server.address().port;
@@ -158,5 +158,40 @@ describe('POST /oauth/token', () => {
     assert.strictEqual(res2.status, 400);
     const body2 = await res2.json();
     assert.strictEqual(body2.error, 'invalid_grant');
+  });
+});
+
+describe('oauthMeta', () => {
+  it('startupLog is the expected string', () => {
+    const { oauthMeta } = createOAuthRouter(baseConfig);
+    assert.strictEqual(
+      oauthMeta.startupLog,
+      '🔐 OAuth: GET /oauth/authorize, GET /oauth/callback, POST /oauth/token',
+    );
+  });
+
+  it('endpoints matches the expected object', () => {
+    const { oauthMeta } = createOAuthRouter(baseConfig);
+    assert.deepStrictEqual(oauthMeta.endpoints, {
+      authorize: '/oauth/authorize',
+      callback: '/oauth/callback',
+      token: '/oauth/token',
+    });
+  });
+
+  it('oauthMeta is frozen', () => {
+    const { oauthMeta } = createOAuthRouter(baseConfig);
+    assert.ok(Object.isFrozen(oauthMeta));
+  });
+
+  it('oauthMeta.endpoints is frozen', () => {
+    const { oauthMeta } = createOAuthRouter(baseConfig);
+    assert.ok(Object.isFrozen(oauthMeta.endpoints));
+  });
+
+  it('separate calls return the same oauthMeta shape', () => {
+    const { oauthMeta: meta1 } = createOAuthRouter(baseConfig);
+    const { oauthMeta: meta2 } = createOAuthRouter(baseConfig);
+    assert.deepStrictEqual(meta1, meta2);
   });
 });

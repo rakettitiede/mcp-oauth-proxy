@@ -14,7 +14,7 @@
  * @param {object}  [config.tokenStore]         - Default: in-memory Map with lazy expiry.
  * @param {number}  [config.tokenTtlMs]         - Default: 5 * 60 * 1000 (5 minutes).
  * @param {object}  [config.logger]             - Default: console.
- * @returns {import('express').Router}
+ * @returns {{ oauthRouter: import('express').Router, oauthMeta: { startupLog: string, endpoints: { authorize: string, callback: string, token: string } } }}
  */
 
 import { Router, urlencoded } from 'express';
@@ -221,5 +221,14 @@ export function createOAuthRouter({
     res.json(pending.tokens);
   });
 
-  return router;
+  const oauthMeta = Object.freeze({
+    startupLog: "🔐 OAuth: GET /oauth/authorize, GET /oauth/callback, POST /oauth/token",
+    endpoints: Object.freeze({
+      authorize: "/oauth/authorize",
+      callback: "/oauth/callback",
+      token: "/oauth/token",
+    }),
+  });
+
+  return { oauthRouter: router, oauthMeta };
 }
