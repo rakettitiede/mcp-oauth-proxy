@@ -8,7 +8,7 @@
  *
  * @param {object}  config
  * @param {string}  config.apiKey              - Required. Static API key to accept.
- * @param {string}  config.googleClientId      - Required. Expected `aud` for OAuth tokens.
+ * @param {string}  [config.googleClientId]    - Optional. Expected `aud` for OAuth access tokens. When omitted, the OAuth access token validation path is disabled and non-JWT Bearer tokens fall through to API key or 401.
  * @param {string}  [config.googleTokeninfoUrl] - Default 'https://oauth2.googleapis.com/tokeninfo'.
  * @param {object}  [config.logger]            - Default `console`. Must expose `.log()` and `.error()`.
  * @param {string}  [config.nodeEnv]           - Default `process.env.NODE_ENV`.
@@ -24,10 +24,6 @@ export function createRequireAuth({
   if (!apiKey) {
     throw new Error('createRequireAuth: apiKey is required');
   }
-  if (!googleClientId) {
-    throw new Error('createRequireAuth: googleClientId is required');
-  }
-
   async function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
@@ -61,28 +57,30 @@ export function createRequireAuth({
         }
       }
 
-      // Try OAuth access_token validation
-      try {
-        const response = await fetch(
-          `${googleTokeninfoUrl}?access_token=${token}`
-        );
+      // Try OAuth access_token validation (only when googleClientId is configured)
+      if (googleClientId) {
+        try {
+          const response = await fetch(
+            `${googleTokeninfoUrl}?access_token=${token}`
+          );
 
-        if (response.ok) {
-          const tokenInfo = await response.json();
+          if (response.ok) {
+            const tokenInfo = await response.json();
 
-          if (tokenInfo.aud === googleClientId) {
-            req.user = {
-              id: tokenInfo.sub,
-              email: tokenInfo.email,
-              authMethod: 'oauth'
-            };
-            logger.log(`🛡️ OAuth authentication (user: ${tokenInfo.email})`);
-            return next();
+            if (tokenInfo.aud === googleClientId) {
+              req.user = {
+                id: tokenInfo.sub,
+                email: tokenInfo.email,
+                authMethod: 'oauth'
+              };
+              logger.log(`🛡️ OAuth authentication (user: ${tokenInfo.email})`);
+              return next();
+            }
           }
-        }
-      } catch (err) {
-        if (nodeEnv !== 'production') {
-          logger.log('Bearer token validation failed:', err.message);
+        } catch (err) {
+          if (nodeEnv !== 'production') {
+            logger.log('Bearer token validation failed:', err.message);
+          }
         }
       }
     }
