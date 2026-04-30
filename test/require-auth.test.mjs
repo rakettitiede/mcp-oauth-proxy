@@ -44,14 +44,11 @@ describe('createRequireAuth — config validation', () => {
     );
   });
 
-  it('throws when googleClientId is missing', () => {
-    assert.throws(
-      () => createRequireAuth({ apiKey: 'x' }),
-      /googleClientId is required/
-    );
+  it('does not throw with apiKey only', () => {
+    assert.doesNotThrow(() => createRequireAuth({ apiKey: 'x', logger: silentLogger }));
   });
 
-  it('does not throw when both required params provided', () => {
+  it('does not throw when both params provided', () => {
     assert.doesNotThrow(() => createRequireAuth(baseConfig));
   });
 });
@@ -211,5 +208,95 @@ describe('createRequireAuth — Bearer token paths', () => {
     await mw(req, res, next);
     assert.strictEqual(next.wasCalled(), true);
     assert.strictEqual(req.user.authMethod, 'api-key');
+  });
+});
+
+describe('createRequireAuth — OAuth path disabled when googleClientId missing', () => {
+  let originalFetch;
+  const noOAuthConfig = {
+    apiKey: 'test-api-key-secret',
+    logger: silentLogger,
+    nodeEnv: 'test',
+  };
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('non-JWT Bearer token → 401 when no googleClientId and no API key', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => { fetchCalls++; return { ok: false }; };
+
+    const mw = createRequireAuth(noOAuthConfig);
+    const req = mockReq({ headers: { authorization: 'Bearer opaque-access-token' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(res.statusCode, 401);
+    assert.strictEqual(next.wasCalled(), false);
+    assert.strictEqual(fetchCalls, 0, 'fetch should never be called when googleClientId is missing and token is not JWT');
+  });
+
+  it('non-JWT Bearer token → API key fallback when key present', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => { fetchCalls++; return { ok: false }; };
+
+    const mw = createRequireAuth(noOAuthConfig);
+    const req = mockReq({
+      headers: {
+        authorization: 'Bearer opaque-access-token',
+        'x-api-key': 'test-api-key-secret',
+      },
+    });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(next.wasCalled(), true);
+    assert.strictEqual(req.user.authMethod, 'api-key');
+    assert.strictEqual(fetchCalls, 0, 'fetch should never be called for OAuth path when googleClientId is missing');
+  });
+
+  it('JWT-shaped Bearer token → IAM validation still works without googleClientId', async () => {
+    globalThis.fetch = async (url) => {
+      if (url.includes('id_token=')) {
+        return {
+          ok: true,
+          json: async () => ({
+            sub: 'sub-iam-no-oauth',
+            email: 'svc@developer.gserviceaccount.com',
+          }),
+        };
+      }
+      throw new Error('access_token fetch should not be called');
+    };
+
+    const mw = createRequireAuth(noOAuthConfig);
+    const req = mockReq({ headers: { authorization: 'Bearer header.payload.signature' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(next.wasCalled(), true);
+    assert.strictEqual(req.user.authMethod, 'iam');
+    assert.strictEqual(req.user.email, 'svc@developer.gserviceaccount.com');
+  });
+
+  it('tokeninfo access_token endpoint is NEVER called when googleClientId is missing', async () => {
+    globalThis.fetch = async (url) => {
+      if (url.includes('access_token=')) {
+        throw new Error('access_token fetch must not be called when googleClientId is missing');
+      }
+      return { ok: false };
+    };
+
+    const mw = createRequireAuth(noOAuthConfig);
+    const req = mockReq({ headers: { authorization: 'Bearer opaque-token' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(res.statusCode, 401);
   });
 });

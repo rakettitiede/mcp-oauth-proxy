@@ -60,7 +60,7 @@ Returns an Express middleware that authenticates requests via Bearer token (Goog
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `apiKey` | string | ✅ | — | The API key to accept. Throws at factory time if missing. |
-| `googleClientId` | string | ✅ | — | Your Google OAuth 2.0 client ID (used to validate the `aud` claim on OAuth access tokens). Throws at factory time if missing. |
+| `googleClientId` | string | | — | Optional. Your Google OAuth 2.0 client ID (used to validate the `aud` claim on OAuth access tokens). When omitted, the OAuth access token validation path is disabled and non-JWT Bearer tokens fall through to API key or 401. Use this if you do not need Custom GPT integration. |
 | `googleTokeninfoUrl` | string | — | `https://oauth2.googleapis.com/tokeninfo` | Google's tokeninfo endpoint. Override for testing. |
 | `logger` | object | — | `console` | Any object with `.log()` and `.error()`. |
 | `nodeEnv` | string | — | `process.env.NODE_ENV` | Controls log verbosity. Non-production logs more. |
@@ -73,6 +73,8 @@ The middleware evaluates these in order and uses the first that succeeds:
 2. **Non-JWT Bearer token** → validated as a Google OAuth access token. Must have `aud` equal to the configured `googleClientId`.
 3. **API key** → accepted from `X-API-Key` header or `api_key` query parameter, matched against the configured `apiKey`.
 4. **Fallback** → `401 Unauthorized`.
+
+If `googleClientId` is not provided, step 2 (OAuth access token validation) is skipped entirely. Use this when the consumer only needs IAM identity tokens + API key (e.g. service-to-service Cloud Run with no Custom GPT integration).
 
 ### `req.user` shape
 
@@ -175,12 +177,11 @@ function createFirestoreTokenStore({ collection = 'oauth-codes' } = {}) {
 
 ## API-key-only mode
 
-If you're not using OAuth, just don't mount the OAuth router and supply any non-empty string for `googleClientId` — the OAuth Bearer validation code path will never be exercised without a Bearer header:
+If you're not using OAuth, just don't mount the OAuth router and omit `googleClientId`:
 
 ```javascript
 const requireAuth = createRequireAuth({
   apiKey: process.env.API_KEY,
-  googleClientId: 'unused',
 });
 
 app.use('/api', requireAuth, yourRoutes);
