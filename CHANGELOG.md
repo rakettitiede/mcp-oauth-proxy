@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v1.0.0...v1.1.0) (2026-04-30)
+
+
+### Features
+
+* make googleClientId optional in createRequireAuth ([ba28031](https://github.com/rakettitiede/mcp-oauth-proxy/commit/ba28031d3b2947ebcaf2e9b0afea561c0c1fa76e))
+* make googleClientId optional in createRequireAuth ([1f8921d](https://github.com/rakettitiede/mcp-oauth-proxy/commit/1f8921dfc0989dbc260bb72ae03d9c274ff8199a))
+
 ## [1.0.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v0.1.0...v1.0.0) (2026-04-27)
 
 
