@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v1.1.0...v1.2.0) (2026-05-18)
+
+
+### Features
+
+* add skill/SKILL.md — Claude usage guide for mcp-oauth-proxy ([dbd7af6](https://github.com/rakettitiede/mcp-oauth-proxy/commit/dbd7af6dcff7df50dc3a24189982d6f18ac7f608))
+* add skill/SKILL.md — mcp-oauth-proxy Claude usage guide ([e07746c](https://github.com/rakettitiede/mcp-oauth-proxy/commit/e07746c11a9b7e32ba6ad9cc2c3fab3731eadd1c))
+
 ## [1.1.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v1.0.0...v1.1.0) (2026-04-30)
 
 
