@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v2.0.0...v2.1.0) (2026-05-29)
+
+
+### Features
+
+* deliver audience validation that was promised in v2.0.0 ([c905716](https://github.com/rakettitiede/mcp-oauth-proxy/commit/c90571693f6688d4d3c11e2e5c494618b49885c8))
+* deliver audience validation that was promised in v2.0.0 ([a11dd88](https://github.com/rakettitiede/mcp-oauth-proxy/commit/a11dd88bb0dae7ad79876590c5e620915391cfe3))
+
 ## [2.0.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v1.2.0...v2.0.0) (2026-05-29)
 
 

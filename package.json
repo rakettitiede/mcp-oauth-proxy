@@ -1,6 +1,6 @@
 {
   "name": "@rakettitiede/mcp-oauth-proxy",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Express middleware and router bridging Custom GPT's OAuth expectations to Google as IdP, with API-key fallback. Extracted from Rakettitiede MCP servers.",
   "type": "module",
   "main": "./src/index.mjs",
