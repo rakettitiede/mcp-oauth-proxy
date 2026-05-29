@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v1.2.0...v2.0.0) (2026-05-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* validate aud claim against derived URL on IAM Bearer tokens
+
+### Features
+
+* validate aud claim against derived URL on IAM Bearer tokens ([90848da](https://github.com/rakettitiede/mcp-oauth-proxy/commit/90848da6b0b1050939401c8cadd0c370f808dcbd))
+
 ## [1.2.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v1.1.0...v1.2.0) (2026-05-18)
 
 
