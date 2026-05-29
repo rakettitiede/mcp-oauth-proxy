@@ -28,7 +28,7 @@ Three mechanisms, any combination:
 | Mechanism | Header | Use case |
 |---|---|---|
 | API key | `X-API-Key: <key>` or `?api_key=<key>` | Local dev, admin scripts |
-| GCP IAM identity token | `Authorization: Bearer <google-jwt>` | Service-to-service (Slack bots → MCP) |
+| GCP IAM identity token | `Authorization: Bearer <google-jwt>` | Service-to-service (any SA with correct audience) |
 | OAuth bearer token | `Authorization: Bearer <oauth-token>` | Custom GPT via OAuth flow |
 
 ## `createRequireAuth`
@@ -53,7 +53,9 @@ When `nodeEnv` is `"development"`, all requests pass through without auth checks
 
 When `googleClientId` is omitted, OAuth bearer validation is disabled. Service-to-service-only services (no Custom GPT plans) omit it entirely.
 
-GCP IAM identity tokens are JWT tokens issued by GCP for service accounts. They are validated by checking the token issuer and audience — no extra config needed beyond omitting `googleClientId`.
+GCP IAM identity tokens are JWT tokens issued by GCP for service accounts. The proxy validates the token's `aud` claim against `${proto}://${host}` derived from `x-forwarded-proto` and `x-forwarded-host` (with fallbacks to `https` and `host`). Callers MUST mint identity tokens with `audience = <service URL>` for IAM auth to succeed. Any service account works — there is no email-suffix restriction.
+
+This is a v2.0.0 breaking change: tokens previously accepted via email-suffix matching (`@developer.gserviceaccount.com`) are now rejected unless their `aud` claim matches the receiving service's derived URL.
 
 ## `createOAuthRouter` — Google OAuth proxy for Custom GPT
 

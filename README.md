@@ -69,7 +69,7 @@ Returns an Express middleware that authenticates requests via Bearer token (Goog
 
 The middleware evaluates these in order and uses the first that succeeds:
 
-1. **JWT-shaped Bearer token** → validated as a Google IAM identity token (service-to-service via workload identity). Must have email ending in `@developer.gserviceaccount.com`.
+1. **JWT-shaped Bearer token** → validated as a Google IAM identity token (service-to-service via workload identity). The token's `aud` claim must match the receiving service's URL, derived from `x-forwarded-proto` and `x-forwarded-host` headers (with fallbacks to `https` and `host`). Any service account works — callers must mint identity tokens with `audience = <service URL>`. *(v2.0.0 breaking change: tokens previously accepted via email-suffix matching are now rejected unless `aud` matches.)*
 2. **Non-JWT Bearer token** → validated as a Google OAuth access token. Must have `aud` equal to the configured `googleClientId`.
 3. **API key** → accepted from `X-API-Key` header or `api_key` query parameter, matched against the configured `apiKey`.
 4. **Fallback** → `401 Unauthorized`.
