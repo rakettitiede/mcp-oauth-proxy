@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v2.1.0...v3.0.0) (2026-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* IAM Bearer auth now succeeds only when allowedIamCallers is a non-empty list containing tokenInfo.email and token aud matches iamAudience. Empty/omitted allowlist fails closed (IAM never accepts). OAuth and API key paths are unchanged.
+
+### Features
+
+* require IAM caller allowlist and configured audience ([#14](https://github.com/rakettitiede/mcp-oauth-proxy/issues/14)) ([6de7c6f](https://github.com/rakettitiede/mcp-oauth-proxy/commit/6de7c6feac4368c9d13bc8d78e009c8319790968))
+
 ## [2.1.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v2.0.0...v2.1.0) (2026-05-29)
 
 
