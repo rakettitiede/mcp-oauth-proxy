@@ -25,9 +25,14 @@ function makeNext() {
 
 const silentLogger = { log() {}, error() {} };
 
+const IAM_AUDIENCE = 'https://mcp.example.test';
+const IAM_CALLER = 'pyry@example.iam.gserviceaccount.com';
+
 const baseConfig = {
   apiKey: 'test-api-key-secret',
   googleClientId: 'test-client-id.apps.googleusercontent.com',
+  iamAudience: IAM_AUDIENCE,
+  allowedIamCallers: [IAM_CALLER],
   logger: silentLogger,
   nodeEnv: 'test',
 };
@@ -115,8 +120,9 @@ describe('createRequireAuth — Bearer token paths', () => {
         return {
           ok: true,
           json: async () => ({
+            aud: IAM_AUDIENCE,
             sub: 'sub-iam-1',
-            email: 'service-account@developer.gserviceaccount.com',
+            email: IAM_CALLER,
           }),
         };
       }
@@ -124,15 +130,59 @@ describe('createRequireAuth — Bearer token paths', () => {
     };
 
     const mw = createRequireAuth(baseConfig);
-    // JWT-shaped: exactly 2 dots
     const req = mockReq({ headers: { authorization: 'Bearer header.payload.signature' } });
     const res = mockRes();
     const next = makeNext();
     await mw(req, res, next);
     assert.strictEqual(next.wasCalled(), true);
     assert.strictEqual(req.user.authMethod, 'iam');
-    assert.strictEqual(req.user.email, 'service-account@developer.gserviceaccount.com');
-    assert.strictEqual(req.user.id, 'sub-iam-1');
+    assert.strictEqual(req.user.email, IAM_CALLER);
+  });
+
+  it('IAM identity token minted for another audience → 401', async () => {
+    globalThis.fetch = async (url) => {
+      if (url.includes('id_token=')) {
+        return {
+          ok: true,
+          json: async () => ({
+            aud: 'https://some-other-service.example',
+            email: IAM_CALLER,
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const mw = createRequireAuth(baseConfig);
+    const req = mockReq({ headers: { authorization: 'Bearer header.payload.signature' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(next.wasCalled(), false);
+    assert.strictEqual(res.statusCode, 401);
+  });
+
+  it('IAM identity token from non-allowlisted caller → 401', async () => {
+    globalThis.fetch = async (url) => {
+      if (url.includes('id_token=')) {
+        return {
+          ok: true,
+          json: async () => ({
+            aud: IAM_AUDIENCE,
+            email: 'attacker@evil-project.iam.gserviceaccount.com',
+          }),
+        };
+      }
+      return { ok: false };
+    };
+
+    const mw = createRequireAuth(baseConfig);
+    const req = mockReq({ headers: { authorization: 'Bearer header.payload.signature' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(next.wasCalled(), false);
+    assert.strictEqual(res.statusCode, 401);
   });
 
   it('OAuth access_token happy path (non-JWT token)', async () => {
@@ -211,10 +261,85 @@ describe('createRequireAuth — Bearer token paths', () => {
   });
 });
 
+describe('createRequireAuth — IAM fail closed', () => {
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('JWT Bearer with matching token but no iamAudience/allowedIamCallers → 401 (no IAM tokeninfo call)', async () => {
+    let idTokenFetches = 0;
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('id_token=')) idTokenFetches++;
+      return { ok: false };
+    };
+
+    const mw = createRequireAuth({
+      apiKey: 'test-api-key-secret',
+      googleClientId: 'test-client-id.apps.googleusercontent.com',
+      logger: silentLogger,
+      nodeEnv: 'test',
+    });
+    const req = mockReq({ headers: { authorization: 'Bearer header.payload.signature' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(res.statusCode, 401);
+    assert.strictEqual(next.wasCalled(), false);
+    assert.strictEqual(idTokenFetches, 0, 'IAM tokeninfo must not be called when IAM is not configured');
+  });
+
+  it('JWT Bearer with iamAudience but empty allowedIamCallers → 401', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => { fetchCalls++; return { ok: false }; };
+
+    const mw = createRequireAuth({
+      apiKey: 'test-api-key-secret',
+      iamAudience: IAM_AUDIENCE,
+      allowedIamCallers: [],
+      logger: silentLogger,
+      nodeEnv: 'test',
+    });
+    const req = mockReq({ headers: { authorization: 'Bearer header.payload.signature' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(res.statusCode, 401);
+    assert.strictEqual(next.wasCalled(), false);
+    assert.strictEqual(fetchCalls, 0);
+  });
+
+  it('JWT Bearer with allowedIamCallers but missing iamAudience → 401', async () => {
+    let fetchCalls = 0;
+    globalThis.fetch = async () => { fetchCalls++; return { ok: false }; };
+
+    const mw = createRequireAuth({
+      apiKey: 'test-api-key-secret',
+      allowedIamCallers: [IAM_CALLER],
+      logger: silentLogger,
+      nodeEnv: 'test',
+    });
+    const req = mockReq({ headers: { authorization: 'Bearer header.payload.signature' } });
+    const res = mockRes();
+    const next = makeNext();
+    await mw(req, res, next);
+    assert.strictEqual(res.statusCode, 401);
+    assert.strictEqual(next.wasCalled(), false);
+    assert.strictEqual(fetchCalls, 0);
+  });
+});
+
 describe('createRequireAuth — OAuth path disabled when googleClientId missing', () => {
   let originalFetch;
   const noOAuthConfig = {
     apiKey: 'test-api-key-secret',
+    iamAudience: IAM_AUDIENCE,
+    allowedIamCallers: [IAM_CALLER],
     logger: silentLogger,
     nodeEnv: 'test',
   };
@@ -266,8 +391,9 @@ describe('createRequireAuth — OAuth path disabled when googleClientId missing'
         return {
           ok: true,
           json: async () => ({
+            aud: IAM_AUDIENCE,
             sub: 'sub-iam-no-oauth',
-            email: 'svc@developer.gserviceaccount.com',
+            email: IAM_CALLER,
           }),
         };
       }
@@ -281,7 +407,7 @@ describe('createRequireAuth — OAuth path disabled when googleClientId missing'
     await mw(req, res, next);
     assert.strictEqual(next.wasCalled(), true);
     assert.strictEqual(req.user.authMethod, 'iam');
-    assert.strictEqual(req.user.email, 'svc@developer.gserviceaccount.com');
+    assert.strictEqual(req.user.email, IAM_CALLER);
   });
 
   it('tokeninfo access_token endpoint is NEVER called when googleClientId is missing', async () => {

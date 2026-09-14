@@ -38,6 +38,9 @@ const app = express();
 const requireAuth = createRequireAuth({
   apiKey: process.env.API_KEY,
   googleClientId: process.env.GOOGLE_CLIENT_ID,
+  // Required together for IAM service-to-service auth (fail closed if omitted):
+  iamAudience: process.env.SERVICE_URL,
+  allowedIamCallers: (process.env.ALLOWED_IAM_CALLERS || '').split(',').filter(Boolean),
 });
 
 const { oauthRouter, oauthMeta } = createOAuthRouter({
@@ -61,6 +64,8 @@ Returns an Express middleware that authenticates requests via Bearer token (Goog
 |---|---|---|---|---|
 | `apiKey` | string | ✅ | — | The API key to accept. Throws at factory time if missing. |
 | `googleClientId` | string | | — | Optional. Your Google OAuth 2.0 client ID (used to validate the `aud` claim on OAuth access tokens). When omitted, the OAuth access token validation path is disabled and non-JWT Bearer tokens fall through to API key or 401. Use this if you do not need Custom GPT integration. |
+| `iamAudience` | string | for IAM | — | Expected `aud` on IAM identity tokens (typically this service's URL). Required together with `allowedIamCallers` for IAM auth to succeed. |
+| `allowedIamCallers` | `string[]` | for IAM | — | Exact service-account emails allowed for IAM auth. Empty or omitted → IAM path never accepts (fail closed). |
 | `googleTokeninfoUrl` | string | — | `https://oauth2.googleapis.com/tokeninfo` | Google's tokeninfo endpoint. Override for testing. |
 | `logger` | object | — | `console` | Any object with `.log()` and `.error()`. |
 | `nodeEnv` | string | — | `process.env.NODE_ENV` | Controls log verbosity. Non-production logs more. |
@@ -69,12 +74,16 @@ Returns an Express middleware that authenticates requests via Bearer token (Goog
 
 The middleware evaluates these in order and uses the first that succeeds:
 
-1. **JWT-shaped Bearer token** → validated as a Google IAM identity token (service-to-service via workload identity). The token's `aud` claim must match the receiving service's URL, derived from `x-forwarded-proto` and `x-forwarded-host` headers (with fallbacks to `https` and `host`). Any service account works — callers must mint identity tokens with `audience = <service URL>`. *(v2.0.0 breaking change: tokens previously accepted via email-suffix matching are now rejected unless `aud` matches.)*
+1. **JWT-shaped Bearer token** → validated as a Google IAM identity token (service-to-service). Requires both `iamAudience` and a non-empty `allowedIamCallers`. The token's `aud` must equal `iamAudience`, and `email` must be an exact allowlist match. If either config is missing, IAM auth is skipped (fail closed) and the request falls through. Callers must mint identity tokens with `audience = iamAudience`.
 2. **Non-JWT Bearer token** → validated as a Google OAuth access token. Must have `aud` equal to the configured `googleClientId`.
 3. **API key** → accepted from `X-API-Key` header or `api_key` query parameter, matched against the configured `apiKey`.
 4. **Fallback** → `401 Unauthorized`.
 
-If `googleClientId` is not provided, step 2 (OAuth access token validation) is skipped entirely. Use this when the consumer only needs IAM identity tokens + API key (e.g. service-to-service Cloud Run with no Custom GPT integration).
+If `googleClientId` is not provided, step 2 (OAuth access token validation) is skipped entirely. OAuth-only or API-key-only deployments can omit the IAM fields; IAM Bearer tokens will not be accepted until both are set.
+
+### Migrating to v3 (IAM)
+
+v3 is a breaking change for IAM callers: audience is no longer derived from `X-Forwarded-*` / `Host`, and any service account is no longer accepted. Pass `iamAudience` (your service URL) and `allowedIamCallers` (caller SA emails). OAuth and API key paths are unchanged.
 
 ### `req.user` shape
 
@@ -177,7 +186,7 @@ function createFirestoreTokenStore({ collection = 'oauth-codes' } = {}) {
 
 ## API-key-only mode
 
-If you're not using OAuth, just don't mount the OAuth router and omit `googleClientId`:
+If you're not using OAuth or IAM, just don't mount the OAuth router and omit `googleClientId`, `iamAudience`, and `allowedIamCallers`:
 
 ```javascript
 const requireAuth = createRequireAuth({
@@ -185,6 +194,18 @@ const requireAuth = createRequireAuth({
 });
 
 app.use('/api', requireAuth, yourRoutes);
+```
+
+## IAM service-to-service mode
+
+```javascript
+const requireAuth = createRequireAuth({
+  apiKey: process.env.API_KEY,
+  iamAudience: process.env.SERVICE_URL, // e.g. https://mcp-xxx.run.app
+  allowedIamCallers: [
+    'pyry@your-project.iam.gserviceaccount.com',
+  ],
+});
 ```
 
 ## What this package deliberately doesn't do
@@ -210,7 +231,7 @@ npm install
 npm test
 ```
 
-31 tests across four suites (auth middleware, OAuth router, oauthMeta, in-memory token store), using `node:test` — no external runner.
+40 tests across auth middleware, OAuth router, oauthMeta, and in-memory token store suites, using `node:test` — no external runner.
 
 ## License
 
