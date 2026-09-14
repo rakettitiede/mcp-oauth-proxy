@@ -28,7 +28,7 @@ Three mechanisms, any combination:
 | Mechanism | Header | Use case |
 |---|---|---|
 | API key | `X-API-Key: <key>` or `?api_key=<key>` | Local dev, admin scripts |
-| GCP IAM identity token | `Authorization: Bearer <google-jwt>` | Service-to-service (any SA with correct audience) |
+| GCP IAM identity token | `Authorization: Bearer <google-jwt>` | Service-to-service (allowlisted SA + configured audience) |
 | OAuth bearer token | `Authorization: Bearer <oauth-token>` | Custom GPT via OAuth flow |
 
 ## `createRequireAuth`
@@ -39,8 +39,12 @@ import { createRequireAuth } from "@rakettitiede/mcp-oauth-proxy";
 const requireAuth = createRequireAuth({
   apiKey: process.env.API_KEY,                    // required — fallback key
   googleClientId: process.env.GOOGLE_CLIENT_ID,  // optional — enables OAuth bearer validation
+  iamAudience: process.env.SERVICE_URL,           // required for IAM — expected token aud
+  allowedIamCallers: [                            // required for IAM — exact SA emails
+    "pyry@your-project.iam.gserviceaccount.com",
+  ],
   googleTokeninfoUrl: "https://oauth2.googleapis.com/tokeninfo",  // optional, has default
-  nodeEnv: process.env.NODE_ENV,                 // optional — skips auth in "development"
+  nodeEnv: process.env.NODE_ENV,
 });
 
 // Mount before routes you want to protect
@@ -49,13 +53,11 @@ app.use("/sse", requireAuth);
 app.use("/mcp", requireAuth);
 ```
 
-When `nodeEnv` is `"development"`, all requests pass through without auth checks — safe for local dev, never in production.
+When `googleClientId` is omitted, OAuth bearer validation is disabled.
 
-When `googleClientId` is omitted, OAuth bearer validation is disabled. Service-to-service-only services (no Custom GPT plans) omit it entirely.
+GCP IAM identity tokens are JWTs issued for service accounts. IAM auth is **fail closed**: both `iamAudience` and a non-empty `allowedIamCallers` must be set, `aud` must equal `iamAudience`, and `email` must be an exact allowlist match. Otherwise the IAM path never accepts and the request falls through to OAuth / API key / 401.
 
-GCP IAM identity tokens are JWT tokens issued by GCP for service accounts. The proxy validates the token's `aud` claim against `${proto}://${host}` derived from `x-forwarded-proto` and `x-forwarded-host` (with fallbacks to `https` and `host`). Callers MUST mint identity tokens with `audience = <service URL>` for IAM auth to succeed. Any service account works — there is no email-suffix restriction.
-
-This is a v2.0.0 breaking change: tokens previously accepted via email-suffix matching (`@developer.gserviceaccount.com`) are now rejected unless their `aud` claim matches the receiving service's derived URL.
+v3 breaking change: audience is no longer derived from forwarding headers, and arbitrary service accounts are rejected unless listed in `allowedIamCallers`.
 
 ## `createOAuthRouter` — Google OAuth proxy for Custom GPT
 
@@ -87,6 +89,8 @@ When a service has no Custom GPT integration, skip `createOAuthRouter` entirely 
 ```js
 const requireAuth = createRequireAuth({
   apiKey: process.env.API_KEY,
+  iamAudience: process.env.SERVICE_URL,
+  allowedIamCallers: [process.env.CALLER_SA_EMAIL],
   nodeEnv: process.env.NODE_ENV,
   // no googleClientId — IAM tokens + API key only
 });
@@ -94,7 +98,7 @@ const requireAuth = createRequireAuth({
 // No oauthRouter needed
 ```
 
-Do not pass sentinel strings or empty values — just omit the fields.
+Do not pass sentinel strings or empty values — just omit the fields. Omitting IAM fields means IAM Bearer tokens are not accepted.
 
 ## Full example with both packages
 
@@ -112,6 +116,8 @@ import { SERVER_NAME, SERVER_VERSION, PORT, API_KEY, NODE_ENV,
 const requireAuth = createRequireAuth({
   apiKey: API_KEY,
   googleClientId: GOOGLE_CLIENT_ID,
+  iamAudience: process.env.SERVICE_URL,
+  allowedIamCallers: (process.env.ALLOWED_IAM_CALLERS || "").split(",").filter(Boolean),
   nodeEnv: NODE_ENV,
 });
 
@@ -148,6 +154,8 @@ app.listen(PORT, "0.0.0.0");
 | Variable | Required | Description |
 |---|---|---|
 | `API_KEY` | Yes | API key for local dev and admin use |
+| `SERVICE_URL` | For IAM | Passed as `iamAudience` (this service's URL) |
+| `ALLOWED_IAM_CALLERS` | For IAM | Comma-separated SA emails for `allowedIamCallers` |
 | `GOOGLE_CLIENT_ID` | Only for OAuth | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Only for OAuth | Google OAuth client secret |
 | `NODE_ENV` | Recommended | Set to `production` in prod |

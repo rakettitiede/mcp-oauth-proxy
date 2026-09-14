@@ -7,16 +7,20 @@
  *   3. Static API key (x-api-key header or api_key query param)
  *
  * @param {object}  config
- * @param {string}  config.apiKey              - Required. Static API key to accept.
- * @param {string}  [config.googleClientId]    - Optional. Expected `aud` for OAuth access tokens. When omitted, the OAuth access token validation path is disabled and non-JWT Bearer tokens fall through to API key or 401.
+ * @param {string}  config.apiKey               - Required. Static API key to accept.
+ * @param {string}  [config.googleClientId]     - Optional. Expected `aud` for OAuth access tokens. When omitted, the OAuth access token validation path is disabled and non-JWT Bearer tokens fall through to API key or 401.
+ * @param {string}  [config.iamAudience]        - Optional. Expected `aud` for IAM identity tokens (typically the service URL). When omitted or empty, the IAM path never accepts (fail closed).
+ * @param {string[]} [config.allowedIamCallers] - Optional. Exact service-account emails allowed for IAM auth. When omitted or empty, the IAM path never accepts (fail closed).
  * @param {string}  [config.googleTokeninfoUrl] - Default 'https://oauth2.googleapis.com/tokeninfo'.
- * @param {object}  [config.logger]            - Default `console`. Must expose `.log()` and `.error()`.
- * @param {string}  [config.nodeEnv]           - Default `process.env.NODE_ENV`.
+ * @param {object}  [config.logger]             - Default `console`. Must expose `.log()` and `.error()`.
+ * @param {string}  [config.nodeEnv]            - Default `process.env.NODE_ENV`.
  * @returns {function} async requireAuth(req, res, next)
  */
 export function createRequireAuth({
   apiKey,
   googleClientId,
+  iamAudience,
+  allowedIamCallers,
   googleTokeninfoUrl = 'https://oauth2.googleapis.com/tokeninfo',
   logger = console,
   nodeEnv = process.env.NODE_ENV,
@@ -24,6 +28,14 @@ export function createRequireAuth({
   if (!apiKey) {
     throw new Error('createRequireAuth: apiKey is required');
   }
+
+  const iamCallerSet = new Set(
+    Array.isArray(allowedIamCallers)
+      ? allowedIamCallers.filter((email) => typeof email === 'string' && email.length > 0)
+      : []
+  );
+  const iamConfigured = Boolean(iamAudience) && iamCallerSet.size > 0;
+
   async function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
@@ -33,27 +45,32 @@ export function createRequireAuth({
 
       // If token looks like a JWT, try IAM identity token validation first
       if (looksLikeJwt) {
-        try {
-          const response = await fetch(
-            `${googleTokeninfoUrl}?id_token=${token}`
-          );
+        if (!iamConfigured) {
+          logger.log('🚫 IAM auth skipped: iamAudience and allowedIamCallers must both be configured');
+        } else {
+          try {
+            const response = await fetch(
+              `${googleTokeninfoUrl}?id_token=${token}`
+            );
 
-          if (!response.ok) {
-            logger.log(`❌ IAM token validation failed: tokeninfo returned ${response.status}`);
-          } else {
-            const tokenInfo = await response.json();
-            const expectedAudience = `${req.get('x-forwarded-proto') || 'https'}://${req.get('x-forwarded-host') || req.get('host')}`;
-
-            if (tokenInfo.aud === expectedAudience) {
-              logger.log(`🛡️ IAM Bearer auth: ${tokenInfo.email}`);
-              req.user = { authMethod: 'iam', email: tokenInfo.email };
-              return next();
+            if (!response.ok) {
+              logger.log(`❌ IAM token validation failed: tokeninfo returned ${response.status}`);
             } else {
-              logger.log(`🎯 IAM token audience mismatch: got ${tokenInfo.aud}, expected ${expectedAudience}`);
+              const tokenInfo = await response.json();
+
+              if (tokenInfo.aud !== iamAudience) {
+                logger.log(`🎯 IAM token audience mismatch: got ${tokenInfo.aud}, expected ${iamAudience}`);
+              } else if (!tokenInfo.email || !iamCallerSet.has(tokenInfo.email)) {
+                logger.log(`🚫 IAM caller not allowlisted: ${tokenInfo.email || '(missing email)'}`);
+              } else {
+                logger.log(`🛡️ IAM Bearer auth: ${tokenInfo.email}`);
+                req.user = { authMethod: 'iam', email: tokenInfo.email };
+                return next();
+              }
             }
+          } catch (e) {
+            logger.log(`💥 IAM token validation error: ${e.message}`);
           }
-        } catch (e) {
-          logger.log(`💥 IAM token validation error: ${e.message}`);
         }
       }
 
