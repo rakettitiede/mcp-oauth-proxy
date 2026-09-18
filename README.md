@@ -118,6 +118,7 @@ The router contains three endpoints that together form an OAuth 2.0 authorizatio
 | `googleClientSecret` | string | ✅ | — | Your Google OAuth 2.0 client secret. |
 | `tokenStore` | object | — | in-memory Map | Storage for the short-lived code↔tokens mapping. See below. |
 | `tokenTtlMs` | number | — | `300_000` (5 min) | How long stored codes are valid. |
+| `fetchImpl` | function | — | global `fetch` | HTTP client used for Google token exchanges. Primarily injectable for tests. |
 | `logger` | object | — | `console` | Any object with `.log()` and `.error()`. |
 
 ### Endpoints
@@ -126,7 +127,7 @@ The router contains three endpoints that together form an OAuth 2.0 authorizatio
 |---|---|---|
 | GET | `/authorize` | Redirects the user to Google OAuth, encoding client's `redirect_uri` and `state` into Google's `state` param. |
 | GET | `/callback` | Google redirects back here; the router exchanges the code for tokens, stores them under a fresh one-time code, and redirects the client with that code. |
-| POST | `/token` | Exchanges a previously-issued code for Google's tokens. One-time use. |
+| POST | `/token` | `authorization_code`: exchanges a previously-issued code for Google's tokens (one-time use). `refresh_token`: forwards Google's refresh grant and returns the new access token. |
 
 ### Google OAuth setup
 
@@ -212,7 +213,7 @@ const requireAuth = createRequireAuth({
 
 - **No custom JWT signing** — Google's tokens are returned directly, by design.
 - **No PKCE** — server-to-server OAuth doesn't need it.
-- **No token refresh** — Google handles that at the token's own lifecycle.
+- **No custom session tokens** — Google's access and refresh tokens are returned as-is; `/token` proxies the refresh grant to Google.
 - **No session management** — stateless by design.
 - **No user info endpoint** — clients get Google's ID token and can decode it themselves.
 - **No consent screen** — Google provides that.
