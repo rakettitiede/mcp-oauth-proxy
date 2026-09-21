@@ -6,6 +6,13 @@
 
 * proxy OAuth `refresh_token` grants to Google
 
+## [3.1.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v3.0.0...v3.1.0) (2026-09-21)
+
+
+### Features
+
+* support OAuth refresh token grant ([#16](https://github.com/rakettitiede/mcp-oauth-proxy/issues/16)) ([abae393](https://github.com/rakettitiede/mcp-oauth-proxy/commit/abae393f58b969bb13084a9f0cb1bcc6901e6296))
+
 ## [3.0.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v2.1.0...v3.0.0) (2026-09-14)
 
 
