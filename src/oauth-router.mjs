@@ -6,13 +6,15 @@
  *   GET  /authorize  — Redirects user to Google OAuth consent screen
  *   GET  /callback   — Receives Google's auth code, exchanges for tokens,
  *                       stores them, redirects back to Custom GPT
- *   POST /token      — Custom GPT exchanges our temporary code for Google tokens
+ *   POST /token      — authorization_code (temp code → Google tokens) or
+ *                       refresh_token (proxy refresh to Google)
  *
  * @param {object}  config
  * @param {string}  config.googleClientId      - Required. Google OAuth client ID.
  * @param {string}  config.googleClientSecret   - Required. Google OAuth client secret.
  * @param {object}  [config.tokenStore]         - Default: in-memory Map with lazy expiry.
  * @param {number}  [config.tokenTtlMs]         - Default: 5 * 60 * 1000 (5 minutes).
+ * @param {function} [config.fetchImpl]          - Default: global fetch. Injectable for tests.
  * @param {object}  [config.logger]             - Default: console.
  * @returns {{ oauthRouter: import('express').Router, oauthMeta: { startupLog: string, endpoints: { authorize: string, callback: string, token: string } } }}
  */
@@ -43,6 +45,7 @@ export function createOAuthRouter({
   googleClientSecret,
   tokenStore,
   tokenTtlMs = 5 * 60 * 1000,
+  fetchImpl = fetch,
   logger = console,
 } = {}) {
   if (!googleClientId) {
@@ -142,7 +145,7 @@ export function createOAuthRouter({
 
     // Exchange code for tokens with Google
     try {
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      const tokenResponse = await fetchImpl('https://oauth2.googleapis.com/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -188,12 +191,60 @@ export function createOAuthRouter({
   /**
    * POST /oauth/token
    *
-   * Custom GPT calls this to exchange our temporary code for tokens.
-   * We return Google's tokens directly.
+   * Two grants:
+   *   authorization_code — client exchanges our temporary code for Google's tokens
+   *   refresh_token      — client refreshes an expired Google access_token via Google
+   *
+   * Both return Google's token response as-is (including a rotated refresh_token
+   * when Google issues one).
    */
   router.post('/token', urlencoded({ extended: false }), async (req, res) => {
-    const { code, grant_type } = req.body;
+    const { code, grant_type, refresh_token } = req.body;
     logger.log(`🎫 POST /oauth/token`);
+
+    if (grant_type === 'refresh_token') {
+      if (!refresh_token) {
+        logger.log(`🎫 /oauth/token failed: missing refresh_token`);
+        return res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'refresh_token is required',
+        });
+      }
+
+      try {
+        const tokenResponse = await fetchImpl('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: googleClientId,
+            client_secret: googleClientSecret,
+            refresh_token,
+            grant_type: 'refresh_token',
+          }),
+        });
+
+        if (!tokenResponse.ok) {
+          const errorText = await tokenResponse.text();
+          logger.log(`🎫 /oauth/token refresh failed: Google returned ${tokenResponse.status}`);
+          // Surface Google's error body when it is JSON; otherwise a generic invalid_grant.
+          try {
+            return res.status(400).json(JSON.parse(errorText));
+          } catch {
+            return res.status(400).json({
+              error: 'invalid_grant',
+              error_description: 'Failed to refresh token with Google',
+            });
+          }
+        }
+
+        const tokens = await tokenResponse.json();
+        logger.log(`🎫 /oauth/token refresh success`);
+        return res.json(tokens);
+      } catch (err) {
+        logger.error(`🎫 /oauth/token refresh error:`, err.message);
+        return res.status(500).json({ error: 'Internal server error during token refresh' });
+      }
+    }
 
     if (grant_type !== 'authorization_code') {
       logger.log(`🎫 /oauth/token failed: unsupported grant_type`);

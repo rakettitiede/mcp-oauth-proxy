@@ -161,6 +161,85 @@ describe('POST /oauth/token', () => {
   });
 });
 
+describe('POST /oauth/token — refresh_token grant', () => {
+  it('returns 400 when refresh_token is missing', async () => {
+    const { base, close } = await startApp(baseConfig);
+    try {
+      const res = await fetch(`${base}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token',
+      });
+      assert.strictEqual(res.status, 400);
+      assert.deepStrictEqual(await res.json(), {
+        error: 'invalid_request',
+        error_description: 'refresh_token is required',
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it('forwards the refresh grant to Google and returns its tokens', async () => {
+    let request;
+    const fetchImpl = async (url, options) => {
+      request = { url, options };
+      return new Response(JSON.stringify({
+        access_token: 'new-access-token',
+        expires_in: 3600,
+        token_type: 'Bearer',
+        refresh_token: 'rotated-refresh-token',
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    const { base, close } = await startApp({ ...baseConfig, fetchImpl });
+
+    try {
+      const res = await fetch(`${base}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token&refresh_token=original-refresh-token',
+      });
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual((await res.json()).access_token, 'new-access-token');
+      assert.strictEqual(request.url, 'https://oauth2.googleapis.com/token');
+      assert.deepStrictEqual(Object.fromEntries(request.options.body), {
+        client_id: baseConfig.googleClientId,
+        client_secret: baseConfig.googleClientSecret,
+        refresh_token: 'original-refresh-token',
+        grant_type: 'refresh_token',
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  it('surfaces a Google OAuth error as a 400 response', async () => {
+    const fetchImpl = async () => new Response(JSON.stringify({
+      error: 'invalid_grant',
+      error_description: 'Token has been revoked.',
+    }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const { base, close } = await startApp({ ...baseConfig, fetchImpl });
+
+    try {
+      const res = await fetch(`${base}/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token&refresh_token=revoked-token',
+      });
+      assert.strictEqual(res.status, 400);
+      assert.strictEqual((await res.json()).error, 'invalid_grant');
+    } finally {
+      await close();
+    }
+  });
+});
+
 describe('oauthMeta', () => {
   it('startupLog is the expected string', () => {
     const { oauthMeta } = createOAuthRouter(baseConfig);

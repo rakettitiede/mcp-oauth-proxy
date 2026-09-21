@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+* proxy OAuth `refresh_token` grants to Google
+
 ## [3.0.0](https://github.com/rakettitiede/mcp-oauth-proxy/compare/v2.1.0...v3.0.0) (2026-09-14)
 
 
